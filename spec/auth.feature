@@ -44,6 +44,8 @@ Feature: Auth
     When the user reads the current session context
     Then the context returns user, organization, and project without the organization id
     And a browser login is represented only by an opaque HttpOnly cookie backed by an encrypted OAuth token
+    And a browser login keeps the validated ID token's minimal display profile encrypted for the current-context user
+    And browser session authorization, tenant, and scope context still come only from the revalidated access token
 
   @auth/guard @api
   Scenario: Guard protected resources against unauthenticated access
@@ -71,6 +73,7 @@ Feature: Auth
     When the configured provider returns a valid authorization code to the Enbor backend
     Then Enbor consumes the attempt once and authenticates the confidential client with client_secret_basic
     And Enbor stores the access token as authenticated ciphertext in D1
+    And Enbor stores only the validated ID token subject, email, name, and picture as authenticated ciphertext for display
     And the browser receives only an opaque HttpOnly SameSite cookie
     And invalid, expired, replayed, or cross-browser responses fail without creating a session
     And browser authorization-attempt, authorization-response, and cookie-session mutation routes remain internal and absent from OpenAPI

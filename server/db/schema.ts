@@ -47,6 +47,7 @@ export const webAuthSessions = sqliteTable(
     idHash: text('id_hash').primaryKey(),
     subject: text('subject').notNull(),
     encryptedAccessToken: text('encrypted_access_token').notNull(),
+    encryptedProfileClaims: text('encrypted_profile_claims'),
     expiresAt: text('expires_at').notNull(),
     createdAt: text('created_at').notNull(),
   },
