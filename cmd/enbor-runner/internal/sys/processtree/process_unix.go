@@ -20,6 +20,13 @@ func Start(cmd *exec.Cmd) (*Process, error) {
 	return &Process{cmd: cmd}, nil
 }
 
+func StartBackground(cmd *exec.Cmd) (*Process, error) {
+	return Start(cmd)
+}
+
+func HideConsoleWindow(_ *exec.Cmd) {
+}
+
 func (p *Process) Wait() error {
 	return p.cmd.Wait()
 }
