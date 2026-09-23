@@ -223,7 +223,7 @@ func (b Bridge) bridgeRequest(ctx context.Context, requestID string, request any
 	if err != nil {
 		return nil, err
 	}
-	process, err := processtree.Start(cmd)
+	process, err := processtree.StartBackground(cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -253,9 +253,7 @@ func resolveNodeExecutable(ctx context.Context, workDir string) (string, error) 
 
 	probeCtx, cancel := context.WithTimeout(ctx, nodeExecutableProbeTimeout)
 	defer cancel()
-	probe := exec.CommandContext(probeCtx, nodePath, "-p", "process.execPath")
-	probe.Dir = workDir
-	probe.Env = os.Environ()
+	probe := nodeExecutableProbeCommand(probeCtx, nodePath, workDir)
 	output, err := probe.Output()
 	if err != nil {
 		return "", fmt.Errorf("resolve node executable: %w", err)
@@ -272,6 +270,14 @@ func resolveNodeExecutable(ctx context.Context, workDir string) (string, error) 
 		return "", fmt.Errorf("resolved node executable %q is a directory", resolved)
 	}
 	return resolved, nil
+}
+
+func nodeExecutableProbeCommand(ctx context.Context, nodePath string, workDir string) *exec.Cmd {
+	probe := exec.CommandContext(ctx, nodePath, "-p", "process.execPath")
+	probe.Dir = workDir
+	probe.Env = os.Environ()
+	processtree.HideConsoleWindow(probe)
+	return probe
 }
 
 func commandEnvironment(request Request) ([]string, error) {
