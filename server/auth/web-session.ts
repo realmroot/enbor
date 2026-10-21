@@ -34,6 +34,13 @@ interface OidcMetadata extends oauth.AuthorizationServer {
   token_endpoint: string
 }
 
+interface WebSessionProfileClaims {
+  sub: string
+  email?: string
+  name?: string
+  picture?: string
+}
+
 export class WebSessionCsrfError extends Error {
   constructor() {
     super('Cookie-authenticated request origin is invalid')
@@ -171,7 +178,7 @@ export async function completeAuthorizationResponse<E extends HonoEnv>(c: WebCon
   if (!tokens.expires_in) throw new WebAuthorizationError('Realmroot access token response omitted expiration')
   const tokenExpiry = now.getTime() + tokens.expires_in * 1000
   const expiresAt = new Date(Math.min(tokenExpiry, now.getTime() + SESSION_MAX_TTL_MS))
-  await persistWebSession(c, claims.sub, tokens.access_token, expiresAt)
+  await persistWebSession(c, claims.sub, tokens.access_token, profileClaims(claims), expiresAt)
   return attempt.returnTo
 }
 
@@ -180,13 +187,14 @@ export async function createE2eWebSession<E extends HonoEnv>(c: WebContext<E>, a
     throw new Error('E2E browser sessions are unavailable')
   }
   const claims = await getAccessTokenClaims(c.env, accessToken, oidcAudience(c.env, c.req.url))
-  await persistWebSession(c, claims.sub, accessToken, new Date(Date.now() + SESSION_MAX_TTL_MS))
+  await persistWebSession(c, claims.sub, accessToken, profileClaims(claims), new Date(Date.now() + SESSION_MAX_TTL_MS))
 }
 
 async function persistWebSession<E extends HonoEnv>(
   c: WebContext<E>,
   subject: string,
   accessToken: string,
+  profile: WebSessionProfileClaims | null,
   expiresAt: Date,
 ) {
   const sessionId = randomOpaqueValue()
@@ -198,6 +206,9 @@ async function persistWebSession<E extends HonoEnv>(
     idHash: sessionIdHash,
     subject,
     encryptedAccessToken: await encryptWebSessionValue(c.env, accessToken, `web-session:${sessionIdHash}`),
+    encryptedProfileClaims: profile
+      ? await encryptWebSessionValue(c.env, JSON.stringify(profile), `web-session-profile:${sessionIdHash}`)
+      : null,
     expiresAt: expiresAt.toISOString(),
     createdAt: now,
   })
@@ -211,7 +222,9 @@ export async function webSessionClaims<E extends HonoEnv>(c: WebContext<E>): Pro
   try {
     const claims = await getAccessTokenClaims(c.env, session.accessToken, oidcAudience(c.env, c.req.url))
     if (claims.sub !== session.subject) throw new OidcError('Web session subject does not match its Realmroot token')
-    return claims
+    if (!session.profile) return claims
+    if (session.profile.sub !== claims.sub) throw new OidcError('Web session profile subject does not match its token')
+    return { ...claims, ...displayProfileClaims(session.profile) }
   } catch (error) {
     await invalidateWebSession(c, session.idHash)
     throw error instanceof OidcError ? error : new OidcError('Browser session is invalid')
@@ -242,11 +255,47 @@ async function readWebSession<E extends HonoEnv>(c: WebContext<E>) {
       idHash: session.idHash,
       subject: session.subject,
       accessToken: await decryptWebSessionValue(c.env, session.encryptedAccessToken, `web-session:${session.idHash}`),
+      profile: session.encryptedProfileClaims
+        ? await decryptProfileClaims(c.env, session.encryptedProfileClaims, session.idHash)
+        : null,
     }
   } catch {
     await invalidateWebSession(c, session.idHash)
     throw new OidcError('Browser session is invalid')
   }
+}
+
+function profileClaims(claims: { sub?: unknown; email?: unknown; name?: unknown; picture?: unknown }) {
+  if (typeof claims.sub !== 'string' || !claims.sub) return null
+  return {
+    sub: claims.sub,
+    ...optionalStringClaim('email', claims.email),
+    ...optionalStringClaim('name', claims.name),
+    ...optionalStringClaim('picture', claims.picture),
+  } satisfies WebSessionProfileClaims
+}
+
+async function decryptProfileClaims(env: Env, encryptedProfileClaims: string, sessionIdHash: string) {
+  const value = JSON.parse(
+    await decryptWebSessionValue(env, encryptedProfileClaims, `web-session-profile:${sessionIdHash}`),
+  ) as unknown
+  const profile = profileClaims(value as WebSessionProfileClaims)
+  if (!profile) {
+    throw new Error('Browser session profile is invalid')
+  }
+  return profile
+}
+
+function displayProfileClaims(profile: WebSessionProfileClaims) {
+  return {
+    ...optionalStringClaim('email', profile.email),
+    ...optionalStringClaim('name', profile.name),
+    ...optionalStringClaim('picture', profile.picture),
+  }
+}
+
+function optionalStringClaim(key: 'email' | 'name' | 'picture', value: unknown) {
+  return typeof value === 'string' ? { [key]: value } : {}
 }
 
 export async function deleteWebSession<E extends HonoEnv>(c: WebContext<E>) {

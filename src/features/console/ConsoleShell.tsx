@@ -182,7 +182,7 @@ function UserMenu({ placement }: { placement: 'sidebar' | 'mobile' }) {
     <div className={containerClassName}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button type="button" variant={triggerVariant} className={triggerClassName}>
+          <Button type="button" variant={triggerVariant} className={triggerClassName} aria-label="User menu">
             <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-xs font-medium text-primary-foreground">
               {userName.slice(0, 1).toUpperCase()}
             </span>

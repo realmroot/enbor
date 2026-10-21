@@ -2,7 +2,7 @@ import { SELF } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { hashOpaqueValue } from '../auth/web-session-crypto'
+import { encryptWebSessionValue, hashOpaqueValue } from '../auth/web-session-crypto'
 import type { Env } from '../env'
 import { registerAuthRoutes } from '../http/auth'
 import { createDepsApiRouter } from '../openapi'
@@ -24,6 +24,12 @@ function cookieValue(response: Response, name: string) {
 type BrowserOidcProviderOptions = {
   scope?: string
   subject?: string
+  accessTokenProfile?: false
+  idTokenProfile?: {
+    email?: string
+    name?: string
+    picture?: string
+  }
   accessTokenSubject?: string
   accessTokenAudience?: string
   idTokenSubject?: string
@@ -68,11 +74,17 @@ async function installBrowserOidcProvider(options: BrowserOidcProviderOptions = 
       const now = Math.floor(Date.now() / 1000)
       const subject = options.subject ?? 'browser_user_1'
       const scope = options.scope ?? 'openid profile email auth:read projects:read projects:write'
+      const accessTokenProfile =
+        options.accessTokenProfile === false
+          ? {}
+          : {
+              email: 'browser@example.com',
+              name: 'Browser User',
+            }
       const accessToken = await new SignJWT({
         client_id: browserClientId,
         scope,
-        email: 'browser@example.com',
-        name: 'Browser User',
+        ...accessTokenProfile,
         'urn:realmroot:params:oauth:org': 'browser_org_1',
       })
         .setProtectedHeader({ alg: 'RS256', kid: 'browser-test-key', typ: 'at+jwt' })
@@ -82,7 +94,8 @@ async function installBrowserOidcProvider(options: BrowserOidcProviderOptions = 
         .setIssuedAt(now)
         .setExpirationTime(now + 3600)
         .sign(privateKey)
-      let idToken = await new SignJWT({ nonce: options.idTokenNonce ?? expectedNonce })
+      const idTokenProfile = options.idTokenProfile ?? { email: 'browser@example.com', name: 'Browser User' }
+      let idToken = await new SignJWT({ nonce: options.idTokenNonce ?? expectedNonce, ...idTokenProfile })
         .setProtectedHeader({ alg: 'RS256', kid: 'browser-test-key', typ: 'JWT' })
         .setIssuer(browserIssuer)
         .setAudience(options.idTokenAudience ?? browserClientId)
@@ -152,6 +165,25 @@ async function establishBrowserSession() {
   const sessionCookie = cookieValue(callback, '__Host-enbor_session')
   expect(sessionCookie).toBeTruthy()
   return sessionCookie!
+}
+
+async function signedBrowserAccessToken(subject: string) {
+  const { privateKey } = await browserSigningKeys
+  const now = Math.floor(Date.now() / 1000)
+  return new SignJWT({
+    client_id: browserClientId,
+    scope: 'openid profile email auth:read projects:read projects:write',
+    email: `${subject}@example.com`,
+    name: `Subject ${subject}`,
+    'urn:realmroot:params:oauth:org': 'browser_org_1',
+  })
+    .setProtectedHeader({ alg: 'RS256', kid: 'browser-test-key', typ: 'at+jwt' })
+    .setIssuer(browserIssuer)
+    .setAudience(browserResource)
+    .setSubject(subject)
+    .setIssuedAt(now)
+    .setExpirationTime(now + 3600)
+    .sign(privateKey)
 }
 
 async function jsonFetch(
@@ -596,6 +628,149 @@ describe('[CF] auth v1', () => {
       'SELECT COUNT(*) AS count FROM web_authorization_attempts',
     ).first<{ count: number }>()
     expect(attempts?.count).toBe(initialAttempts?.count ?? 0)
+  })
+
+  it('returns the validated ID token display profile when the browser access token omits profile claims [spec: auth/callback] [spec: auth/session-current]', async () => {
+    const provider = await installBrowserOidcProvider({
+      accessTokenProfile: false,
+      idTokenProfile: {
+        email: 'id-profile@example.com',
+        name: 'ID Token Profile',
+        picture: 'https://images.example.com/id-profile.jpg',
+      },
+    })
+    const { authorizationUrl, loginCookie } = await beginBrowserSignIn()
+    provider.setExpectedNonce(authorizationUrl.searchParams.get('nonce')!)
+
+    const callback = await completeBrowserSignIn(authorizationUrl, loginCookie)
+
+    expect(callback.status).toBe(302)
+    const sessionCookie = cookieValue(callback, '__Host-enbor_session')
+    expect(sessionCookie).toBeTruthy()
+    const sessionIdHash = await hashOpaqueValue(sessionCookie!.split('=')[1]!)
+    const row = await (env as unknown as Env).DB.prepare(
+      'SELECT encrypted_profile_claims FROM web_auth_sessions WHERE id_hash = ?',
+    )
+      .bind(sessionIdHash)
+      .first<{ encrypted_profile_claims: string }>()
+    expect(row?.encrypted_profile_claims).toEqual(expect.any(String))
+    expect(row?.encrypted_profile_claims).not.toContain('id-profile@example.com')
+    expect(row?.encrypted_profile_claims).not.toContain('ID Token Profile')
+    const current = await SELF.fetch('https://example.com/api/v1/auth/sessions/current', {
+      headers: { cookie: sessionCookie! },
+    })
+    expect(current.status).toBe(200)
+    await expect(current.json()).resolves.toMatchObject({
+      user: {
+        id: 'browser_user_1',
+        email: 'id-profile@example.com',
+        name: 'ID Token Profile',
+      },
+      organization: { id: 'browser_org_1', name: 'Organization browser_org_1' },
+    })
+  })
+
+  it('rejects a browser session whose access token subject changes even when an ID token profile is stored [spec: auth/callback] [spec: auth/session-current]', async () => {
+    const provider = await installBrowserOidcProvider({
+      idTokenProfile: { email: 'stable-profile@example.com', name: 'Stable Profile' },
+    })
+    const { authorizationUrl, loginCookie } = await beginBrowserSignIn()
+    provider.setExpectedNonce(authorizationUrl.searchParams.get('nonce')!)
+    const callback = await completeBrowserSignIn(authorizationUrl, loginCookie)
+    const sessionCookie = cookieValue(callback, '__Host-enbor_session')!
+    const sessionIdHash = await hashOpaqueValue(sessionCookie.split('=')[1]!)
+    const replacementAccessToken = await signedBrowserAccessToken('browser_intruder')
+    await (env as unknown as Env).DB.prepare(
+      'UPDATE web_auth_sessions SET encrypted_access_token = ? WHERE id_hash = ?',
+    )
+      .bind(
+        await encryptWebSessionValue(env as unknown as Env, replacementAccessToken, `web-session:${sessionIdHash}`),
+        sessionIdHash,
+      )
+      .run()
+
+    const response = await SELF.fetch('https://example.com/api/v1/auth/sessions/current', {
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.headers.get('set-cookie')).toContain('__Host-enbor_session=')
+    expect(response.headers.get('set-cookie')).toContain('Max-Age=0')
+    const remaining = await (env as unknown as Env).DB.prepare(
+      'SELECT COUNT(*) AS count FROM web_auth_sessions WHERE id_hash = ?',
+    )
+      .bind(sessionIdHash)
+      .first<{ count: number }>()
+    expect(remaining?.count).toBe(0)
+  })
+
+  it('invalidates a browser session whose encrypted ID token profile is tampered [spec: auth/callback] [spec: auth/session-current]', async () => {
+    const sessionCookie = await establishBrowserSession()
+    const sessionIdHash = await hashOpaqueValue(sessionCookie.split('=')[1]!)
+    const row = await (env as unknown as Env).DB.prepare(
+      'SELECT encrypted_profile_claims FROM web_auth_sessions WHERE id_hash = ?',
+    )
+      .bind(sessionIdHash)
+      .first<{ encrypted_profile_claims: string }>()
+    const encrypted = JSON.parse(row!.encrypted_profile_claims) as { ciphertext: string }
+    encrypted.ciphertext = `${encrypted.ciphertext.startsWith('A') ? 'B' : 'A'}${encrypted.ciphertext.slice(1)}`
+    await (env as unknown as Env).DB.prepare(
+      'UPDATE web_auth_sessions SET encrypted_profile_claims = ? WHERE id_hash = ?',
+    )
+      .bind(JSON.stringify(encrypted), sessionIdHash)
+      .run()
+
+    const response = await SELF.fetch('https://example.com/api/v1/auth/sessions/current', {
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.headers.get('set-cookie')).toContain('__Host-enbor_session=')
+    expect(response.headers.get('set-cookie')).toContain('Max-Age=0')
+    const remaining = await (env as unknown as Env).DB.prepare(
+      'SELECT COUNT(*) AS count FROM web_auth_sessions WHERE id_hash = ?',
+    )
+      .bind(sessionIdHash)
+      .first<{ count: number }>()
+    expect(remaining?.count).toBe(0)
+  })
+
+  it.each([
+    ['a different subject', { sub: 'browser_intruder' }],
+    ['an empty subject', { sub: '' }],
+  ])('invalidates a browser session whose encrypted ID token profile has %s [spec: auth/callback] [spec: auth/session-current]', async (_case, profileOverride) => {
+    const sessionCookie = await establishBrowserSession()
+    const sessionIdHash = await hashOpaqueValue(sessionCookie.split('=')[1]!)
+    await (env as unknown as Env).DB.prepare(
+      'UPDATE web_auth_sessions SET encrypted_profile_claims = ? WHERE id_hash = ?',
+    )
+      .bind(
+        await encryptWebSessionValue(
+          env as unknown as Env,
+          JSON.stringify({
+            ...profileOverride,
+            email: 'intruder-profile@example.com',
+            name: 'Intruder Profile',
+          }),
+          `web-session-profile:${sessionIdHash}`,
+        ),
+        sessionIdHash,
+      )
+      .run()
+
+    const response = await SELF.fetch('https://example.com/api/v1/auth/sessions/current', {
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.headers.get('set-cookie')).toContain('__Host-enbor_session=')
+    expect(response.headers.get('set-cookie')).toContain('Max-Age=0')
+    const remaining = await (env as unknown as Env).DB.prepare(
+      'SELECT COUNT(*) AS count FROM web_auth_sessions WHERE id_hash = ?',
+    )
+      .bind(sessionIdHash)
+      .first<{ count: number }>()
+    expect(remaining?.count).toBe(0)
   })
 
   it('rejects an expired authorization attempt before exchanging its code', async () => {

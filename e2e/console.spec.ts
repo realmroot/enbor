@@ -55,6 +55,41 @@ test.describe('console (real browser)', () => {
     await expect(page.getByText('Personal workspace', { exact: true })).toHaveCount(0)
   })
 
+  test('opens the desktop user menu with the signed-in ID token profile [spec: web-console/shell] [spec: auth/session-current]', async ({
+    page,
+  }) => {
+    await gotoWithBrowserSession(page, {
+      sub: 'desktop-profile-user',
+      email: 'desktop-profile@example.com',
+      name: 'Desktop Profile',
+      organization: { id: 'org_desktop_profile', name: 'Organization org_desktop_profile' },
+    })
+
+    await page.getByRole('button', { name: 'User menu' }).click()
+
+    await expect(page.getByRole('menu')).toContainText('Desktop Profile')
+    await expect(page.getByRole('menu')).toContainText('desktop-profile@example.com')
+    await expect(page.getByRole('menuitem', { name: 'Log out' })).toBeVisible()
+  })
+
+  test('opens the 390px user menu with the signed-in ID token profile [spec: web-console/shell] [spec: auth/session-current]', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await gotoWithBrowserSession(page, {
+      sub: 'mobile-profile-user',
+      email: 'mobile-profile@example.com',
+      name: 'Mobile Profile',
+      organization: { id: 'org_mobile_profile', name: 'Organization org_mobile_profile' },
+    })
+
+    await page.getByRole('button', { name: 'User menu' }).click()
+
+    await expect(page.getByRole('menu')).toContainText('Mobile Profile')
+    await expect(page.getByRole('menu')).toContainText('mobile-profile@example.com')
+    await expect(page.getByRole('menuitem', { name: 'Log out' })).toBeVisible()
+  })
+
   test('signs in and navigates the console shell [spec: web-console/shell] [spec: auth/e2e-sign-in]', async ({
     page,
     token,
