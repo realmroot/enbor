@@ -569,6 +569,51 @@ describe('consumeCloudTurnQueueMessage — cloud-command turn path [spec: runtim
     )
   })
 
+  it('[spec: sessions/cloud-sandbox-switch] settles a queued turn errored without running it while cloud is off', async () => {
+    await consumeCloudTurnQueueMessage(
+      { ...deps, cloudSandboxEnabled: false },
+      { ...stepMessage, requestId: 'req_off' },
+    )
+
+    expect(runSessionTurnMock).not.toHaveBeenCalled()
+    expect(activateCloudSessionMock).not.toHaveBeenCalled()
+    expect(enqueueCloudTurnMock).not.toHaveBeenCalled()
+    expect(updateSessionWhenStateMock).toHaveBeenCalledWith(
+      'proj_1',
+      'session_1',
+      ['pending', 'running'],
+      expect.objectContaining({ state: 'error', stateReason: 'cloud-sandbox-disabled', activeTurnId: null }),
+    )
+    expect(recordAuditMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'session.command',
+        outcome: 'denied',
+        metadata: { reason: 'cloud_sandbox_disabled', messageType: 'session.step' },
+      }),
+    )
+  })
+
+  it('[spec: sessions/cloud-sandbox-switch] refuses a queued cloud startup while cloud is off', async () => {
+    findSessionMock.mockResolvedValue(fakeSession({ state: 'pending' }))
+
+    await consumeCloudTurnQueueMessage({ ...deps, cloudSandboxEnabled: false }, {
+      type: 'session.start',
+      sessionId: 'session_1',
+      organizationId: 'org_1',
+      projectId: 'proj_1',
+      runtime: 'enbor',
+      runtimeConfig: {},
+      auditAction: 'session.prompt',
+    } as unknown as Parameters<typeof consumeCloudTurnQueueMessage>[1])
+
+    expect(runSessionTurnMock).not.toHaveBeenCalled()
+    expect(recordAuditMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: 'session.runtime.start', outcome: 'denied' }),
+    )
+  })
+
   it('marks a dead-lettered cloud turn errored and clears its lease [spec: runtime/cloud-turn]', async () => {
     await markCloudTurnDeadLettered(deps, stepMessage)
 

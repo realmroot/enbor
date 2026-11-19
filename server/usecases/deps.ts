@@ -98,4 +98,7 @@ export interface Deps {
   // inline cloud launch runs synchronously so the create flow re-reads the
   // started row; in production the launch is fire-and-forget.
   rereadStartedSession: boolean
+  // False when the operator has switched the hosted cloud sandbox off; cloud
+  // sessions are then refused at creation and their queued turns are not run.
+  cloudSandboxEnabled?: boolean
 }

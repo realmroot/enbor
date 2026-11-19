@@ -234,6 +234,28 @@ describe('createSessionForAgent — launch dispatch failure (H5 FIX 2)', () => {
     expect(failureAudit).toBeTruthy()
   })
 
+  it('[spec: sessions/cloud-sandbox-switch] rejects a cloud session without persisting it while cloud is off', async () => {
+    const result = await createSessionForAgent(
+      { ...deps, cloudSandboxEnabled: false },
+      auth,
+      'agent_1',
+      'env_1',
+      { runtime: 'enbor', prompt: 'Start cloud session' },
+      null,
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      error: expect.objectContaining({
+        status: 403,
+        code: 'forbidden',
+        detail: expect.objectContaining({ reason: 'cloud_sandbox_disabled' }),
+      }),
+    })
+    expect(insertSessionMock).not.toHaveBeenCalled()
+    expect(enqueueCloudTurnMock).not.toHaveBeenCalled()
+  })
+
   it('keeps the happy path: returns ok and does not reconcile when the enqueue succeeds', async () => {
     enqueueCloudTurnMock.mockResolvedValue(undefined)
 

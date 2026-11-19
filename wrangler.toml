@@ -17,6 +17,8 @@ run_worker_first = ["/api", "/api/*", "/runtime/*", "/.well-known/oauth-protecte
 [vars]
 ALLOWED_ORIGINS = "https://enbor.realmroot.dev,https://enbor.saltbo.workers.dev"
 RUNTIME_MODE = "live"
+# Hosted cloud sandbox switch: only "true" lets cloud sessions start or run turns.
+CLOUD_SANDBOX_ENABLED = "false"
 SANDBOX_TRANSPORT = "rpc"
 AI_GATEWAY_ID = "enbor"
 OIDC_ISSUER = "https://id.realmroot.dev/api/auth"
@@ -144,6 +146,8 @@ routes = [
 
 [env.staging.vars]
 RUNTIME_MODE = "live"
+# Hosted cloud sandbox switch: only "true" lets cloud sessions start or run turns.
+CLOUD_SANDBOX_ENABLED = "false"
 SANDBOX_TRANSPORT = "rpc"
 AI_GATEWAY_ID = "enbor"
 OIDC_ISSUER = "https://id.realmroot.dev/api/auth"

@@ -60,6 +60,14 @@ Feature: Sessions
     When a session selects the Enbor cloud runtime
     Then session creation is rejected without inventing a platform provider or model
 
+  @sessions/cloud-sandbox-switch @usecase
+  Scenario: Refuse hosted cloud sandbox work while the operator has switched it off
+    Given the operator has not enabled the hosted cloud sandbox
+    When a session is created in a cloud environment
+    Then session creation is rejected as cloud sandbox disabled without persisting a session
+    And a cloud turn already queued for an existing session settles that session as errored
+    And no sandbox is started and no model is called
+
   @sessions/live-state-refresh @web
   Scenario: Refresh a live session until its turn state settles
     Given a session detail page is showing a pending or running session

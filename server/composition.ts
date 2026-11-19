@@ -93,5 +93,6 @@ export function createDeps(env: Env): Deps {
     sessionEventStore,
     createApprovalGate: (values) => createToolApprovalGate({ sessionOrchestration, audit, policy }, values),
     rereadStartedSession: env.RUNTIME_MODE === 'test',
+    cloudSandboxEnabled: env.RUNTIME_MODE === 'test' || env.CLOUD_SANDBOX_ENABLED === 'true',
   }
 }
