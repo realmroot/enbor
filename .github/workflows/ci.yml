@@ -164,7 +164,8 @@ jobs:
     name: Playwright E2E
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
-    runs-on: ubuntu-latest
+    # Playwright has no Chromium build for the ubuntu-latest (26.04) image yet.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
