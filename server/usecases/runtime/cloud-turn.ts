@@ -51,6 +51,7 @@ import type {
   CloudTurnQueueMessage,
   EnborTurnExecutor,
   EventStore,
+  PlatformBudgetGate,
   PolicyPort,
   ProviderRepo,
   RuntimeSecretGateway,
@@ -162,6 +163,8 @@ export type CloudTurnDeps = {
   createApprovalGate: CreateApprovalGate
   // False when the operator has switched the hosted cloud sandbox off.
   cloudSandboxEnabled?: boolean
+  // Operator daily ceiling on hosted model spend; absent means unlimited.
+  platformBudget?: PlatformBudgetGate
 }
 
 export async function startSessionRuntimeForRow(
@@ -602,7 +605,12 @@ export async function consumeCloudTurnQueueMessage(deps: CloudTurnDeps, message:
     return
   }
   if (deps.cloudSandboxEnabled === false) {
-    await markCloudTurnRefused(deps, message)
+    await markCloudTurnRefused(deps, message, 'cloud_sandbox_disabled')
+    return
+  }
+  const budgetDenial = await deps.platformBudget?.check(message.organizationId)
+  if (budgetDenial) {
+    await markCloudTurnRefused(deps, message, 'platform_budget_exhausted', budgetDenial.rule)
     return
   }
   if (message.type === 'session.start') {
@@ -706,13 +714,19 @@ export async function dispatchPrompt(
 // A cloud turn message that exhausted its retries lands in the dead-letter queue.
 // Mark the stranded session errored (clearing any lease it held) so clients
 // recover it immediately instead of waiting for the 20-minute stall sweep.
-// The hosted cloud sandbox is switched off: settle the session as errored
-// without starting a sandbox or calling a model.
-async function markCloudTurnRefused(deps: CloudTurnDeps, message: CloudTurnQueueMessage): Promise<void> {
+// The operator refuses hosted work (cloud switched off, or the daily model
+// budget spent): settle the session as errored without starting a sandbox or
+// calling a model.
+async function markCloudTurnRefused(
+  deps: CloudTurnDeps,
+  message: CloudTurnQueueMessage,
+  reason: 'cloud_sandbox_disabled' | 'platform_budget_exhausted',
+  rule: string | null = null,
+): Promise<void> {
   const auth = cloudTurnSystemAuth(message)
   await deps.sessionOrchestration.updateSessionWhenState(auth.project.id, message.sessionId, ['pending', 'running'], {
     state: 'error',
-    stateReason: 'cloud-sandbox-disabled',
+    stateReason: reason.replaceAll('_', '-'),
     activeTurnId: null,
     turnLeaseExpiresAt: null,
     updatedAt: now(),
@@ -724,7 +738,7 @@ async function markCloudTurnRefused(deps: CloudTurnDeps, message: CloudTurnQueue
     outcome: 'denied',
     requestId: requestIdFrom(message.requestId),
     sessionId: message.sessionId,
-    metadata: { reason: 'cloud_sandbox_disabled', messageType: message.type },
+    metadata: { reason, messageType: message.type, ...(rule ? { rule } : {}) },
   })
 }
 

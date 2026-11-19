@@ -256,6 +256,53 @@ describe('createSessionForAgent — launch dispatch failure (H5 FIX 2)', () => {
     expect(enqueueCloudTurnMock).not.toHaveBeenCalled()
   })
 
+  it('[spec: governance/platform-daily-budget] denies a cloud session once the daily budget is spent', async () => {
+    const check = vi.fn(async () => ({
+      allowed: false as const,
+      category: 'budget',
+      rule: 'organization-daily',
+      message: 'spent',
+    }))
+
+    const result = await createSessionForAgent(
+      { ...deps, platformBudget: { check } },
+      auth,
+      'agent_1',
+      'env_1',
+      { runtime: 'enbor', prompt: 'Start cloud session' },
+      null,
+    )
+
+    expect(check).toHaveBeenCalledWith('org_1')
+    expect(result).toEqual({
+      ok: false,
+      error: expect.objectContaining({
+        status: 403,
+        code: 'policy_denied',
+        detail: expect.objectContaining({ category: 'budget', ruleId: 'organization-daily' }),
+      }),
+    })
+    expect(insertSessionMock).not.toHaveBeenCalled()
+    expect(enqueueCloudTurnMock).not.toHaveBeenCalled()
+  })
+
+  it('[spec: governance/platform-daily-budget] creates a cloud session while the daily budget remains', async () => {
+    enqueueCloudTurnMock.mockResolvedValue(undefined)
+    const check = vi.fn(async () => null)
+
+    const result = await createSessionForAgent(
+      { ...deps, platformBudget: { check } },
+      auth,
+      'agent_1',
+      'env_1',
+      { runtime: 'enbor', prompt: 'Start cloud session' },
+      null,
+    )
+
+    expect(check).toHaveBeenCalledWith('org_1')
+    expect(result.ok).toBe(true)
+  })
+
   it('keeps the happy path: returns ok and does not reconcile when the enqueue succeeds', async () => {
     enqueueCloudTurnMock.mockResolvedValue(undefined)
 
