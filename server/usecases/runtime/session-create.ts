@@ -875,6 +875,22 @@ export async function createSessionForAgent(
   const environmentSnapshot = baseEnvironmentSnapshot
   const hostingMode = environmentHostingMode(environmentSnapshot)
   const usesCloudLoop = runtime === 'enbor'
+  if (hostingMode === 'cloud' && deps.cloudSandboxEnabled === false) {
+    return {
+      ok: false,
+      error: {
+        status: 403,
+        code: 'forbidden',
+        message: 'Cloud sandbox sessions are not available; use a self-hosted environment',
+        detail: {
+          reason: 'cloud_sandbox_disabled',
+          resourceType: 'environment',
+          resourceId: environmentId,
+          hostingMode,
+        },
+      },
+    }
+  }
   if (
     !(await validateRuntimeProviderModel(
       deps,

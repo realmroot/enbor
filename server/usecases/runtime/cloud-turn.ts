@@ -160,6 +160,8 @@ export type CloudTurnDeps = {
   cloudTurnQueue: CloudTurnQueue
   runtimeSecrets: RuntimeSecretGateway
   createApprovalGate: CreateApprovalGate
+  // False when the operator has switched the hosted cloud sandbox off.
+  cloudSandboxEnabled?: boolean
 }
 
 export async function startSessionRuntimeForRow(
@@ -599,6 +601,10 @@ export async function consumeCloudTurnQueueMessage(deps: CloudTurnDeps, message:
   if (!session) {
     return
   }
+  if (deps.cloudSandboxEnabled === false) {
+    await markCloudTurnRefused(deps, message)
+    return
+  }
   if (message.type === 'session.start') {
     if (session.state !== 'pending') {
       return
@@ -700,6 +706,28 @@ export async function dispatchPrompt(
 // A cloud turn message that exhausted its retries lands in the dead-letter queue.
 // Mark the stranded session errored (clearing any lease it held) so clients
 // recover it immediately instead of waiting for the 20-minute stall sweep.
+// The hosted cloud sandbox is switched off: settle the session as errored
+// without starting a sandbox or calling a model.
+async function markCloudTurnRefused(deps: CloudTurnDeps, message: CloudTurnQueueMessage): Promise<void> {
+  const auth = cloudTurnSystemAuth(message)
+  await deps.sessionOrchestration.updateSessionWhenState(auth.project.id, message.sessionId, ['pending', 'running'], {
+    state: 'error',
+    stateReason: 'cloud-sandbox-disabled',
+    activeTurnId: null,
+    turnLeaseExpiresAt: null,
+    updatedAt: now(),
+  })
+  await deps.audit.record(auth, {
+    action: message.type === 'session.start' ? 'session.runtime.start' : 'session.command',
+    resourceType: 'session',
+    resourceId: message.sessionId,
+    outcome: 'denied',
+    requestId: requestIdFrom(message.requestId),
+    sessionId: message.sessionId,
+    metadata: { reason: 'cloud_sandbox_disabled', messageType: message.type },
+  })
+}
+
 export async function markCloudTurnDeadLettered(deps: CloudTurnDeps, message: CloudTurnQueueMessage): Promise<void> {
   const store = deps.sessionOrchestration
   const auth = cloudTurnSystemAuth(message)

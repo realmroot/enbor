@@ -18,6 +18,10 @@ export interface Env {
   // Wake-up queue for durable HTTP trigger runs. D1 owns FIFO and run state.
   TRIGGER_DISPATCHES?: Queue<unknown>
   RUNTIME_MODE?: string
+  // Operator switch for the hosted cloud sandbox. Only the exact value 'true'
+  // allows cloud sessions to start or run turns; any other value (or none)
+  // leaves self-hosted runners as the only execution path. Test mode is always on.
+  CLOUD_SANDBOX_ENABLED?: string
   VAULT_ENCRYPTION_KEY?: string
   // AI Gateway name for third-party ({vendor}/{model}) cloud models (Unified
   // Billing / BYOK); defaults to 'enbor'. '@cf/' models stay gateway-free.

@@ -80,6 +80,9 @@ Required bindings and variables:
 - `SANDBOX`: Cloudflare Sandbox/Containers binding
 - `RUNTIME_MODE=live` in deployed environments
 - `AI_GATEWAY_ID`: optional Cloudflare AI Gateway id
+- `CLOUD_SANDBOX_ENABLED`: set to `true` to allow hosted cloud sandbox sessions;
+  any other value keeps cloud sessions and queued cloud turns refused, leaving
+  self-hosted Runners as the only execution path
 
 Build the container image from this repository's `Dockerfile`. Do not store raw
 provider credentials or OAuth tokens in D1, UI state, or logs.
