@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createUsageRepo } from '../adapters/repos/usage-records'
 import { projects, usageRecords } from '../db/schema'
 import { dpopHeaders, setupOidcProvider, signIn } from './auth'
 
@@ -149,5 +150,32 @@ describe('[CF] v1 usage records', () => {
     expect(lines).toHaveLength(2)
     expect(lines[1]).toContain('workers-ai')
     expect(lines[1]).toContain('15,100,25,USD')
+  })
+})
+
+describe('[CF] platform budget usage sum', () => {
+  beforeEach(async () => {
+    await setupOidcProvider()
+  })
+
+  it('[spec: governance/platform-daily-budget] sums successful spend since a day start, per platform and organization', async () => {
+    const authorization = await signIn()
+    const project = await projectContext(authorization)
+    const db = drizzle(env.DB)
+    const day = '2031-01-02'
+    for (const row of [
+      usageRow(project, { costMicros: 100, createdAt: `${day}T00:00:00.000Z` }),
+      usageRow(project, { costMicros: 50, createdAt: `${day}T23:59:59.999Z` }),
+      usageRow(project, { costMicros: 7, state: 'error', createdAt: `${day}T01:00:00.000Z` }),
+      usageRow(project, { costMicros: 9, createdAt: '2031-01-01T23:59:59.999Z' }),
+      usageRow(project, { costMicros: 1000, organizationId: 'org_other', createdAt: `${day}T02:00:00.000Z` }),
+    ]) {
+      await db.insert(usageRecords).values(row)
+    }
+    const repo = createUsageRepo(db)
+
+    expect(await repo.costMicrosSince(`${day}T00:00:00.000Z`)).toBe(1150)
+    expect(await repo.costMicrosSince(`${day}T00:00:00.000Z`, project.organizationId)).toBe(150)
+    expect(await repo.costMicrosSince('2031-01-03T00:00:00.000Z', project.organizationId)).toBe(0)
   })
 })

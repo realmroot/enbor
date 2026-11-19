@@ -5,10 +5,13 @@ import {
   effectivePolicyFrom,
   environmentAllowsConnector,
   evaluateBudgets,
+  evaluatePlatformBudget,
   evaluateSandboxRuntimeDecision,
   mergePolicyObjects,
   type PolicyLevel,
+  parsePlatformBudgetLimit,
   parsePolicyJson,
+  platformBudgetDayStart,
   policyBlocksConnector,
   policyBlocksTool,
   policyRequiresApproval,
@@ -626,5 +629,51 @@ describe('policyRequiresApproval additional branches', () => {
 describe('validatePolicyScope additional branches', () => {
   it('passes for an organization scope without teamId', () => {
     expect(validatePolicyScope({ level: 'organization' })).toBeNull()
+  })
+})
+
+describe('[spec: governance/platform-daily-budget] platform budget', () => {
+  const limits = { dailyCostMicros: 100, organizationDailyCostMicros: 40 }
+
+  it('allows usage below both limits', () => {
+    expect(evaluatePlatformBudget(limits, { platformCostMicros: 99, organizationCostMicros: 39 })).toBeNull()
+  })
+
+  it('denies once the platform limit is spent', () => {
+    expect(evaluatePlatformBudget(limits, { platformCostMicros: 100, organizationCostMicros: 0 })).toMatchObject({
+      allowed: false,
+      category: 'budget',
+      rule: 'platform-daily',
+    })
+  })
+
+  it('denies once the organization limit is spent', () => {
+    expect(evaluatePlatformBudget(limits, { platformCostMicros: 50, organizationCostMicros: 40 })).toMatchObject({
+      category: 'budget',
+      rule: 'organization-daily',
+    })
+  })
+
+  it('treats an unset limit as unlimited', () => {
+    expect(
+      evaluatePlatformBudget(
+        { dailyCostMicros: null, organizationDailyCostMicros: null },
+        { platformCostMicros: 1e12, organizationCostMicros: 1e12 },
+      ),
+    ).toBeNull()
+  })
+
+  it('parses limits and rejects invalid values', () => {
+    expect(parsePlatformBudgetLimit('X', undefined)).toBeNull()
+    expect(parsePlatformBudgetLimit('X', ' ')).toBeNull()
+    expect(parsePlatformBudgetLimit('X', '110000')).toBe(110000)
+    expect(parsePlatformBudgetLimit('X', '0')).toBe(0)
+    expect(() => parsePlatformBudgetLimit('X', '-1')).toThrow('X must be')
+    expect(() => parsePlatformBudgetLimit('X', '1.5')).toThrow('X must be')
+    expect(() => parsePlatformBudgetLimit('X', 'ten')).toThrow('X must be')
+  })
+
+  it('starts the budget day at 00:00 UTC', () => {
+    expect(platformBudgetDayStart(new Date('2026-11-19T23:59:59.999Z'))).toBe('2026-11-19T00:00:00.000Z')
   })
 })

@@ -24,6 +24,15 @@ Feature: Governance
     Then the call is denied with a budget policy category before provider execution
     And budgets scoped to a different provider or model are skipped
 
+  @governance/platform-daily-budget @usecase
+  Scenario: Cap hosted model spend per day across the platform and per organization
+    Given the operator sets a daily hosted model spend limit for the platform and for each organization
+    When the recorded spend of the current UTC day reaches either limit
+    Then creating a cloud session is denied with a budget policy category
+    And a queued cloud turn settles its session as errored without starting a sandbox or calling a model
+    And self-hosted sessions are not limited
+    And hosted work is allowed again when the next UTC day starts
+
   @governance/sandbox-restrictions @domain
   Scenario: Enforce sandbox networking and command restrictions
     Given a project sets sandbox enablement, network, host, and command policy

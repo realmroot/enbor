@@ -967,6 +967,9 @@ export interface UsageSummaryQuery {
 // measurement projection the domain summarizer folds over.
 export interface UsageRepo {
   list(query: UsageListQuery): Promise<UsageRecord[]>
+  // Sum of successful cost micros recorded at or after `since`, across every
+  // project, optionally narrowed to one organization.
+  costMicrosSince(since: string, organizationId?: string): Promise<number>
   find(projectId: string, recordId: string): Promise<UsageRecord | null>
   summaryRows(query: UsageSummaryQuery): Promise<UsageMeasurement[]>
 }
@@ -2375,3 +2378,16 @@ export interface SessionCreateOptions {
 }
 
 export type { ConnectorCatalogTool, SecretMaterial }
+
+// Operator ceiling on hosted model spend. check returns a budget denial when the
+// platform or the organization has spent its daily limit, otherwise null.
+export interface PlatformBudgetGate {
+  check(organizationId: string): Promise<PlatformBudgetDenial | null>
+}
+
+export interface PlatformBudgetDenial {
+  allowed: false
+  category: string
+  rule: string | null
+  message: string
+}

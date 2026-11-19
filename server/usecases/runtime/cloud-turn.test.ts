@@ -614,6 +614,43 @@ describe('consumeCloudTurnQueueMessage — cloud-command turn path [spec: runtim
     )
   })
 
+  it('[spec: governance/platform-daily-budget] settles a queued turn errored without running it once the budget is spent', async () => {
+    const check = vi.fn(async () => ({
+      allowed: false as const,
+      category: 'budget',
+      rule: 'platform-daily',
+      message: 'spent',
+    }))
+
+    await consumeCloudTurnQueueMessage({ ...deps, platformBudget: { check } }, stepMessage)
+
+    expect(check).toHaveBeenCalledWith('org_1')
+    expect(runSessionTurnMock).not.toHaveBeenCalled()
+    expect(updateSessionWhenStateMock).toHaveBeenCalledWith(
+      'proj_1',
+      'session_1',
+      ['pending', 'running'],
+      expect.objectContaining({ state: 'error', stateReason: 'platform-budget-exhausted' }),
+    )
+    expect(recordAuditMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        outcome: 'denied',
+        metadata: { reason: 'platform_budget_exhausted', messageType: 'session.step', rule: 'platform-daily' },
+      }),
+    )
+  })
+
+  it('[spec: governance/platform-daily-budget] runs a queued turn while the budget remains', async () => {
+    runSessionTurnMock.mockResolvedValue({ status: 'idle' })
+    const check = vi.fn(async () => null)
+
+    await consumeCloudTurnQueueMessage({ ...deps, platformBudget: { check } }, stepMessage)
+
+    expect(check).toHaveBeenCalledWith('org_1')
+    expect(runSessionTurnMock).toHaveBeenCalledTimes(1)
+  })
+
   it('marks a dead-lettered cloud turn errored and clears its lease [spec: runtime/cloud-turn]', async () => {
     await markCloudTurnDeadLettered(deps, stepMessage)
 

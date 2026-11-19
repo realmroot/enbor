@@ -891,6 +891,18 @@ export async function createSessionForAgent(
       },
     }
   }
+  const budgetDenial = hostingMode === 'cloud' ? await deps.platformBudget?.check(auth.organization.id) : null
+  if (budgetDenial) {
+    return {
+      ok: false,
+      error: {
+        status: 403,
+        code: 'policy_denied',
+        message: budgetDenial.message,
+        detail: { category: budgetDenial.category, ruleId: budgetDenial.rule, resourceType: 'budget' },
+      },
+    }
+  }
   if (
     !(await validateRuntimeProviderModel(
       deps,

@@ -17,6 +17,7 @@ import type {
   InboxSubscriptionGateway,
   LeaseRepo,
   MemoryStoreRepo,
+  PlatformBudgetGate,
   PolicyPort,
   PolicyRepo,
   ProjectRepo,
@@ -101,4 +102,6 @@ export interface Deps {
   // False when the operator has switched the hosted cloud sandbox off; cloud
   // sessions are then refused at creation and their queued turns are not run.
   cloudSandboxEnabled?: boolean
+  // Operator daily ceiling on hosted model spend; absent means unlimited.
+  platformBudget?: PlatformBudgetGate
 }

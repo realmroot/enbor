@@ -622,3 +622,61 @@ export function evaluateSandboxRuntimeDecision(
 
   return { allowed: true, category: 'sandbox', rule: null, message: 'Allowed by sandbox policy.' }
 }
+
+// ─── Platform budget ─────────────────────────────────────────────────────────
+
+// Operator-set daily ceilings on hosted model spend, in cost micros. They bound
+// what every tenant together, and each organization alone, can spend per UTC day
+// on the platform's own model capacity, independent of project-owned budgets.
+export interface PlatformBudgetLimits {
+  dailyCostMicros: number | null
+  organizationDailyCostMicros: number | null
+}
+
+export interface PlatformBudgetUsage {
+  platformCostMicros: number
+  organizationCostMicros: number
+}
+
+// An unset limit is unlimited. A set limit must be a non-negative integer, so a
+// typo fails loudly instead of silently lifting the ceiling.
+export function parsePlatformBudgetLimit(name: string, value: string | undefined): number | null {
+  if (value === undefined || value.trim() === '') {
+    return null
+  }
+  const limit = Number(value)
+  if (!Number.isSafeInteger(limit) || limit < 0) {
+    throw new Error(`${name} must be a non-negative integer number of cost micros`)
+  }
+  return limit
+}
+
+export function platformBudgetDayStart(at: Date): string {
+  return `${at.toISOString().slice(0, 10)}T00:00:00.000Z`
+}
+
+export function evaluatePlatformBudget(
+  limits: PlatformBudgetLimits,
+  usage: PlatformBudgetUsage,
+): PolicyDecision | null {
+  if (limits.dailyCostMicros !== null && usage.platformCostMicros >= limits.dailyCostMicros) {
+    return {
+      allowed: false,
+      category: 'budget',
+      rule: 'platform-daily',
+      message: 'The platform daily model budget is spent; hosted model work resumes at 00:00 UTC.',
+    }
+  }
+  if (
+    limits.organizationDailyCostMicros !== null &&
+    usage.organizationCostMicros >= limits.organizationDailyCostMicros
+  ) {
+    return {
+      allowed: false,
+      category: 'budget',
+      rule: 'organization-daily',
+      message: 'This organization has spent its daily hosted model budget; it resumes at 00:00 UTC.',
+    }
+  }
+  return null
+}

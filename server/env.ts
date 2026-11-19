@@ -22,6 +22,10 @@ export interface Env {
   // allows cloud sessions to start or run turns; any other value (or none)
   // leaves self-hosted runners as the only execution path. Test mode is always on.
   CLOUD_SANDBOX_ENABLED?: string
+  // Daily (UTC) ceilings on hosted model spend in cost micros, for all tenants
+  // together and for each organization. Unset means unlimited.
+  PLATFORM_DAILY_COST_LIMIT_MICROS?: string
+  ORGANIZATION_DAILY_COST_LIMIT_MICROS?: string
   VAULT_ENCRYPTION_KEY?: string
   // AI Gateway name for third-party ({vendor}/{model}) cloud models (Unified
   // Billing / BYOK); defaults to 'enbor'. '@cf/' models stay gateway-free.

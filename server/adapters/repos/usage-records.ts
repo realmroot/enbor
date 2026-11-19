@@ -1,6 +1,6 @@
 import type { UsageMeasurement, UsageProviderType, UsageType } from '@server/domain/usage'
 import type { UsageListQuery, UsageRecord, UsageRepo, UsageSummaryQuery } from '@server/usecases/ports'
-import { and, desc, eq, gte, lt, lte, or } from 'drizzle-orm'
+import { and, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm'
 import type { drizzle } from 'drizzle-orm/d1'
 import { usageRecords } from '../../db/schema'
 
@@ -54,6 +54,19 @@ function measurementFrom(row: UsageRow): UsageMeasurement {
 
 export function createUsageRepo(db: Db): UsageRepo {
   return {
+    async costMicrosSince(since: string, organizationId?: string): Promise<number> {
+      const filters = [eq(usageRecords.state, 'success'), gte(usageRecords.createdAt, since)]
+      if (organizationId !== undefined) {
+        filters.push(eq(usageRecords.organizationId, organizationId))
+      }
+      const row = await db
+        .select({ total: sql<number>`coalesce(sum(${usageRecords.costMicros}), 0)` })
+        .from(usageRecords)
+        .where(and(...filters))
+        .get()
+      return row?.total ?? 0
+    },
+
     async list(query: UsageListQuery): Promise<UsageRecord[]> {
       const filters = [
         eq(usageRecords.projectId, query.projectId),

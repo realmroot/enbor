@@ -2,6 +2,7 @@ import { createAuditPort } from './adapters/gateways/audit'
 import { createCloudTurnQueue } from './adapters/gateways/cloud-turn-queue'
 import { createInboxCallbackTokenCodec } from './adapters/gateways/inbox-callback-tokens'
 import { createInboxSubscriptionGateway } from './adapters/gateways/inbox-subscriptions'
+import { createPlatformBudgetGate } from './adapters/gateways/platform-budget'
 import { createPolicyPort } from './adapters/gateways/policy'
 import { createProviderCatalogGateway } from './adapters/gateways/provider-catalog'
 import { createRealmrootEnrollmentGateway } from './adapters/gateways/realmroot-enrollment'
@@ -52,6 +53,7 @@ export function createDeps(env: Env): Deps {
   const isCloudLoop = createCloudLoopChecker(db)
   const sessionEventStore = createEventStore(db, isCloudLoop, sessionDoEvents)
   const runnerChannel = createRunnerChannel(env, (sessionId) => sessions.resolveRunnerEnvironmentId(sessionId))
+  const usageRecords = createUsageRepo(db)
   const runtimeExecution = createRuntimeExecutionAdapters(env, {
     runnerChannel,
     resolveSandboxBackend: (sessionId) => sessions.resolveSandboxBackend(sessionId),
@@ -72,7 +74,7 @@ export function createDeps(env: Env): Deps {
     memoryStores: createMemoryStoreRepo(db),
     audit,
     policy,
-    usageRecords: createUsageRepo(db),
+    usageRecords,
     auditRecords: createAuditReadRepo(db),
     triggers: createTriggerRepo(db),
     inboxActivations: createInboxActivationRepo(db),
@@ -94,5 +96,6 @@ export function createDeps(env: Env): Deps {
     createApprovalGate: (values) => createToolApprovalGate({ sessionOrchestration, audit, policy }, values),
     rereadStartedSession: env.RUNTIME_MODE === 'test',
     cloudSandboxEnabled: env.RUNTIME_MODE === 'test' || env.CLOUD_SANDBOX_ENABLED === 'true',
+    platformBudget: createPlatformBudgetGate(env, usageRecords),
   }
 }

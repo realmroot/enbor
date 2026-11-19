@@ -1066,6 +1066,8 @@ export const usageRecords = sqliteTable(
   (table) => [
     index('idx_usage_records_project_created').on(table.projectId, table.createdAt, table.id),
     index('idx_usage_records_project_provider_model').on(table.projectId, table.providerType, table.modelId),
+    index('idx_usage_records_created').on(table.createdAt),
+    index('idx_usage_records_organization_created').on(table.organizationId, table.createdAt),
     check('ck_usage_records_state', sql`${table.state} in ('success','error')`),
   ],
 )

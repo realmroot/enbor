@@ -83,6 +83,9 @@ Required bindings and variables:
 - `CLOUD_SANDBOX_ENABLED`: set to `true` to allow hosted cloud sandbox sessions;
   any other value keeps cloud sessions and queued cloud turns refused, leaving
   self-hosted Runners as the only execution path
+- `PLATFORM_DAILY_COST_LIMIT_MICROS` and `ORGANIZATION_DAILY_COST_LIMIT_MICROS`:
+  daily (UTC) ceilings on hosted model spend, in cost micros, for all tenants
+  together and for each organization; unset means unlimited
 
 Build the container image from this repository's `Dockerfile`. Do not store raw
 provider credentials or OAuth tokens in D1, UI state, or logs.
