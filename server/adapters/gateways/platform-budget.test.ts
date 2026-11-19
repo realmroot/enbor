@@ -47,6 +47,15 @@ describe('[spec: governance/platform-daily-budget] platform budget gate', () => 
     expect(repo.costMicrosSince).not.toHaveBeenCalled()
   })
 
+  it('reads the current UTC day from the system clock by default', async () => {
+    const repo = usage(0, 0)
+    const gate = createPlatformBudgetGate({ PLATFORM_DAILY_COST_LIMIT_MICROS: '100' }, repo)
+
+    await gate.check('org_1')
+
+    expect(repo.costMicrosSince).toHaveBeenCalledWith(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`)
+  })
+
   it('rejects an invalid limit at construction', () => {
     expect(() => createPlatformBudgetGate({ PLATFORM_DAILY_COST_LIMIT_MICROS: 'lots' }, usage(0, 0))).toThrow(
       'PLATFORM_DAILY_COST_LIMIT_MICROS',
