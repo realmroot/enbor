@@ -117,12 +117,11 @@ export function runtimeSupportsHostingMode(hostingMode: RuntimeHostingMode, runt
 
 export const DEFAULT_AI_GATEWAY_ID = 'enbor'
 
-// Pure cloud-model routing rule. Third-party ({vendor}/{model}) cloud models
-// bill through AI Gateway and must name a gateway (configurable, default 'enbor').
-// '@cf/' models stay gateway-free: they run on the free Workers AI allocation,
-// and forcing a not-yet-created named gateway returns 400 for them too. The
-// effectful env read stays at the adapter egress; this seam only decides which
-// gateway routes a given model id.
-export function aiGatewayFor(modelId: string, gatewayId: string | undefined) {
-  return modelId.startsWith('@cf/') ? undefined : { id: gatewayId || DEFAULT_AI_GATEWAY_ID }
+// Pure cloud-model routing rule. Every cloud model call names the platform AI
+// Gateway (configurable, default 'enbor'): third-party ({vendor}/{model}) models
+// bill through it, and '@cf/' Workers AI models pass through it so their spend
+// shows in the gateway's logs and analytics. The named gateway must exist in
+// the account. The effectful env read stays at the adapter egress.
+export function aiGatewayFor(_modelId: string, gatewayId: string | undefined) {
+  return { id: gatewayId || DEFAULT_AI_GATEWAY_ID }
 }

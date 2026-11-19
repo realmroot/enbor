@@ -123,8 +123,8 @@ describe('workersAiModelClient — retry logic (live mode)', () => {
         model: model.id,
         messages: expect.arrayContaining([{ role: 'user', content: 'hi' }]),
       }),
-      // @cf model + no signal → no gateway, no signal → empty options object.
-      {},
+      // Every model routes through the default gateway; no signal is passed.
+      { gateway: { id: 'enbor' } },
     )
   })
 
@@ -200,7 +200,10 @@ describe('workersAiModelClient — retry logic (live mode)', () => {
 
     await client.complete(model, context, controller.signal)
 
-    expect(aiRun).toHaveBeenCalledWith(model.id, expect.anything(), { signal: controller.signal })
+    expect(aiRun).toHaveBeenCalledWith(model.id, expect.anything(), {
+      gateway: { id: 'enbor' },
+      signal: controller.signal,
+    })
   })
 
   it('exposes the normalized error category in the ProviderCallError after exhaustion', async () => {
@@ -255,7 +258,7 @@ describe('workersAiModelClient — message serialization (openAiMessages + openA
       expect.objectContaining({
         messages: expect.arrayContaining([{ role: 'system', content: 'You are helpful.' }]),
       }),
-      {},
+      { gateway: { id: 'enbor' } },
     )
   })
 
@@ -274,7 +277,7 @@ describe('workersAiModelClient — message serialization (openAiMessages + openA
       expect.objectContaining({
         messages: expect.arrayContaining([expect.objectContaining({ role: 'assistant' })]),
       }),
-      {},
+      { gateway: { id: 'enbor' } },
     )
   })
 
@@ -391,7 +394,7 @@ describe('workersAiModelClient — message serialization (openAiMessages + openA
           },
         ],
       }),
-      {},
+      { gateway: { id: 'enbor' } },
     )
   })
 })
@@ -907,7 +910,7 @@ describe('workersAiModelClient — test mode bypass', () => {
   })
 })
 
-describe('workersAiModelClient — AI gateway routing (live mode)', () => {
+describe('[spec: providers/ai-gateway-routing] workersAiModelClient — AI gateway routing (live mode)', () => {
   const thirdPartyModel: Model<string> = { ...model, id: 'anthropic/claude-sonnet-4' }
 
   it('routes a third-party model through the default "enbor" gateway', async () => {
@@ -923,10 +926,9 @@ describe('workersAiModelClient — AI gateway routing (live mode)', () => {
     expect(aiRun).toHaveBeenCalledWith('anthropic/claude-sonnet-4', expect.anything(), { gateway: { id: 'custom-gw' } })
   })
 
-  it('passes no gateway for @cf models (free Workers AI)', async () => {
+  it('routes a Workers AI (@cf) model through the gateway too', async () => {
     const aiRun = vi.fn().mockResolvedValue(successResponse())
     await workersAiModelClient(makeEnv(aiRun)).complete(model, context)
-    const options = aiRun.mock.calls[0]?.[2] as { gateway?: unknown }
-    expect(options.gateway).toBeUndefined()
+    expect(aiRun).toHaveBeenCalledWith(model.id, expect.anything(), { gateway: { id: 'enbor' } })
   })
 })

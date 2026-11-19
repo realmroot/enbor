@@ -24,6 +24,13 @@ Feature: Providers
     And only tool-driving text models are kept, minus a denylist of false function_calling flags
     And id, display name, capabilities, context window, and per-token pricing are stored
 
+  @providers/ai-gateway-routing @domain
+  Scenario: Route every hosted model call through the platform AI Gateway
+    Given a cloud session calls a Workers AI model or a third-party vendor model
+    When the runtime dispatches the model call
+    Then the call names the configured AI Gateway, or the default gateway when none is configured
+    And the call is therefore visible in that gateway's logs and analytics
+
   # ── Lifecycle (usecase: business branches over fake ports) ──
 
   @providers/catalog-refresh @usecase

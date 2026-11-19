@@ -659,19 +659,20 @@ export type AgentSpec = {
     provider: string | null;
     model: string | null;
     skills: Array<string>;
-    subagents: Array<AgentSubagent>;
+    subagents: Array<AgentSubagentReference>;
     allowedTools: Array<string>;
     mcpConnectors: Array<string>;
     identity: IdentityDescriptor;
 };
-export type AgentSubagent = {
+export type AgentSubagentReference = {
+    /**
+     * Existing Agent resource in the same project.
+     */
+    agentId: string;
+    /**
+     * Stable runtime alias used to address the referenced Agent as a sub-agent.
+     */
     name: string;
-    description: string;
-    systemPrompt: string;
-    model: string | null;
-    allowedTools: Array<string>;
-    skills: Array<string>;
-    mcpConnectors: Array<string>;
 };
 export type IdentityDescriptor = {
     identityId: string;
@@ -696,7 +697,7 @@ export type AgentStatus = {
     currentVersionId: string | null;
     version: number;
     /**
-     * Whether an active Inbox Trigger can currently resolve a compatible execution environment.
+     * Whether the active bound Identity can currently resolve a compatible execution environment for a Session, without requiring a Trigger.
      */
     schedulable: boolean;
 };
@@ -708,7 +709,7 @@ export type CreateAgentRequest = {
         provider?: string | null;
         model?: string | null;
         skills?: Array<string>;
-        subagents?: Array<AgentSubagentInput>;
+        subagents?: Array<AgentSubagentReference>;
         allowedTools?: Array<string>;
         mcpConnectors?: Array<string>;
         identityRef?: string | null;
@@ -718,15 +719,6 @@ export type ResourceCreateMetadata = {
     name: string;
     description?: string | null;
 };
-export type AgentSubagentInput = {
-    name: string;
-    description: string;
-    systemPrompt: string;
-    model?: string | null;
-    allowedTools?: Array<string>;
-    skills?: Array<string>;
-    mcpConnectors?: Array<string>;
-};
 export type UpdateAgentRequest = {
     metadata?: ResourceUpdateMetadata;
     spec?: {
@@ -734,7 +726,7 @@ export type UpdateAgentRequest = {
         provider?: string | null;
         model?: string | null;
         skills?: Array<string>;
-        subagents?: Array<AgentSubagentInput>;
+        subagents?: Array<AgentSubagentReference>;
         allowedTools?: Array<string>;
         mcpConnectors?: Array<string>;
         identityRef?: string | null;
@@ -1543,9 +1535,13 @@ export type SessionAgentSnapshot = {
     createdAt: string;
 };
 export type SessionSubagent = {
+    agentId: string;
+    agentVersionId: string;
+    version: number;
     name: string;
     description: string;
     systemPrompt: string;
+    provider: string | null;
     model: string | null;
     allowedTools: Array<string>;
     skills: Array<string>;
@@ -2136,6 +2132,10 @@ export type ListAgentsData = {
         createdTo?: string;
         limit?: number;
         cursor?: string;
+        /**
+         * Filter by whether an Identity is bound, independently of scheduling readiness.
+         */
+        identityBound?: 'true' | 'false';
         /**
          * Exact Realmroot Agent actor id bound through the Agent Identity.
          */
@@ -4448,6 +4448,7 @@ export type ListSessionsResponse = ListSessionsResponses[keyof ListSessionsRespo
 export type CreateSessionData = {
     body: CreateSessionRequest;
     headers?: {
+        'idempotency-key'?: string;
         /**
          * Selects an Enbor project in the authenticated organization. Omit to use the default project.
          */

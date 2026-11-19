@@ -119,7 +119,7 @@ export declare function createEnborClient(config: EnborClientConfig): {
     };
     sessions: {
         list: (query?: types.ListSessionsData["query"]) => Promise<types.SessionListResponse>;
-        create: (body: types.CreateSessionRequest) => Promise<types.Session>;
+        create: (body: types.CreateSessionRequest, idempotencyKey?: string) => Promise<types.Session>;
         get: (sessionId: string) => Promise<types.Session>;
         update: (sessionId: string, body: types.UpdateSessionRequest) => Promise<types.Session>;
         delete: (sessionId: string) => Promise<void>;
