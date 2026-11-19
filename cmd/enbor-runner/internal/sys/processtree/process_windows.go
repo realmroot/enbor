@@ -13,12 +13,35 @@ import (
 )
 
 type Process struct {
-	cmd  *exec.Cmd
-	job  windows.Handle
-	once sync.Once
+	cmd        *exec.Cmd
+	job        windows.Handle
+	background bool
+	once       sync.Once
 }
 
+var (
+	generateConsoleCtrlEvent = windows.GenerateConsoleCtrlEvent
+	terminateJobObject       = windows.TerminateJobObject
+)
+
 func Start(cmd *exec.Cmd) (*Process, error) {
+	return start(cmd, false)
+}
+
+// StartBackground hides console windows for non-interactive probes. Hidden
+// children do not share the caller console for CTRL_BREAK; Stop cleans them up
+// through the Job Object instead of claiming graceful console delivery.
+func StartBackground(cmd *exec.Cmd) (*Process, error) {
+	return start(cmd, true)
+}
+
+func HideConsoleWindow(cmd *exec.Cmd) {
+	attr := sysProcAttr(cmd)
+	attr.CreationFlags |= windows.CREATE_NO_WINDOW
+	attr.HideWindow = true
+}
+
+func start(cmd *exec.Cmd, background bool) (*Process, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return nil, err
@@ -34,7 +57,11 @@ func Start(cmd *exec.Cmd) (*Process, error) {
 		_ = windows.CloseHandle(job)
 		return nil, err
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP}
+	attr := sysProcAttr(cmd)
+	attr.CreationFlags |= windows.CREATE_NEW_PROCESS_GROUP
+	if background {
+		HideConsoleWindow(cmd)
+	}
 	if err := cmd.Start(); err != nil {
 		_ = windows.CloseHandle(job)
 		return nil, err
@@ -56,7 +83,14 @@ func Start(cmd *exec.Cmd) (*Process, error) {
 		_ = windows.CloseHandle(job)
 		return nil, err
 	}
-	return &Process{cmd: cmd, job: job}, nil
+	return &Process{cmd: cmd, job: job, background: background}, nil
+}
+
+func sysProcAttr(cmd *exec.Cmd) *syscall.SysProcAttr {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	return cmd.SysProcAttr
 }
 
 func (p *Process) Wait() error {
@@ -67,11 +101,15 @@ func (p *Process) Stop(grace time.Duration) {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return
 	}
-	_ = windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, uint32(p.cmd.Process.Pid))
+	// CREATE_NO_WINDOW children do not share the caller's console, so CTRL_BREAK
+	// delivery is only a graceful path for visible process groups.
+	if !p.background {
+		_ = generateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, uint32(p.cmd.Process.Pid))
+	}
 	if grace > 0 {
 		time.Sleep(grace)
 	}
-	_ = windows.TerminateJobObject(p.job, 1)
+	_ = terminateJobObject(p.job, 1)
 }
 
 func (p *Process) Close() error {
